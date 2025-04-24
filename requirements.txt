@@ -3,4 +3,3 @@ uvicorn
 discord.py
 python-dotenv
 requests
-
