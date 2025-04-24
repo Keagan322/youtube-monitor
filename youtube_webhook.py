@@ -12,7 +12,11 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
-bot = commands.Bot(command_prefix="!")
+# Enable necessary intents
+intents = discord.Intents.default()
+intents.message_content = True  # For reading commands
+intents.guilds = True  # For accessing channels
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 def load_accounts():
     try:
