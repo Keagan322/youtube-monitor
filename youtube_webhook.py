@@ -6,6 +6,8 @@ import os
 from dotenv import load_dotenv
 import json
 import requests
+import asyncio
+from functools import partial
 
 app = FastAPI()
 load_dotenv()
@@ -14,8 +16,8 @@ CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
 # Enable necessary intents
 intents = discord.Intents.default()
-intents.message_content = True  # For reading commands
-intents.guilds = True  # For accessing channels
+intents.message_content = True
+intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 def load_accounts():
@@ -90,4 +92,11 @@ async def handle_webhook(request: Request):
         print(f"Webhook error: {e}")
     return {"status": "ok"}
 
-bot.run(DISCORD_TOKEN)
+# Start Discord bot in background
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(bot.start(DISCORD_TOKEN))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await bot.close()
