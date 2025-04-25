@@ -95,12 +95,16 @@ def subscribe_channel(channel_id, retries=3, delay=5):
                     "hub.mode": "subscribe",
                     "hub.topic": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
                     "hub.callback": WEBHOOK_URL,
-                    "hub.verify": "async"
+                    "hub.verify": "async",
+                    "hub.verify_token": ""
                 },
+                headers={"User-Agent": "YouTubeWebhookBot"},
                 timeout=15
             )
+            lease_seconds = response.headers.get('hub-lease-seconds', 'unknown')
+            logger.info(f"Subscription response: status={response.status_code}, lease_seconds={lease_seconds}, headers={response.headers}")
             if response.status_code == 202:
-                logger.info(f"Subscription accepted for {channel_id}, lease_seconds={response.headers.get('hub-lease-seconds', 'unknown')}")
+                logger.info(f"Subscription accepted for {channel_id}, lease_seconds={lease_seconds}")
                 time.sleep(2)
                 return True
             else:
