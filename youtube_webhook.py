@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 import discord
 from discord.ext import commands
 import xml.etree.ElementTree as ET
@@ -96,9 +96,14 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
         else:
             await ctx.send(f"Channel {channel_id} not found")
 
+@app.get("/webhook")
+async def webhook_verify(hub_challenge: str = Query(..., alias="hub.challenge")):
+    logger.info(f"Received webhook verification with challenge: {hub_challenge}")
+    return hub_challenge
+
 @app.post("/webhook")
 async def handle_webhook(request: Request):
-    logger.info("Received webhook request")
+    logger.info("Received webhook POST request")
     xml_data = await request.body()
     logger.debug(f"Webhook XML: {xml_data}")
     try:
