@@ -9,7 +9,8 @@ import requests
 import asyncio
 import logging
 import time
-import uuid
+import secrets
+import string
 
 # Configure logging with detailed output
 logging.basicConfig(
@@ -74,6 +75,7 @@ async def on_ready():
         logger.info(f"Found Discord channel {CHANNEL_ID} ({channel.name})")
     else:
         logger.error(f"Discord channel {CHANNEL_ID} not found or bot lacks access")
+    logger.info(f"FastAPI server ready to receive webhooks at {WEBHOOK_URL}")
 
 def subscribe_channel(channel_id, retries=3, delay=5):
     logger.info(f"Attempting to subscribe to YouTube channel {channel_id}")
@@ -111,20 +113,20 @@ def subscribe_channel(channel_id, retries=3, delay=5):
 @bot.command()
 async def test(ctx):
     """Test command to verify bot connectivity and permissions"""
-    nonce = str(uuid.uuid4())
+    nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
     logger.info(f"Test command received in channel {ctx.channel.id} with nonce {nonce}")
     try:
-        await ctx.send(f"Bot is online during test {nonce}! Checking channel access...", nonce=nonce)
+        await ctx.send("Bot is online and working! Checking channel access...", nonce=nonce)
         channel = bot.get_channel(CHANNEL_ID)
         if channel:
-            await channel.send(f"Test message from bot to confirm access to channel {CHANNEL_ID} (nonce: {nonce})", nonce=nonce)
-            await ctx.send(f"Successfully sent test message to configured channel {CHANNEL_ID} (nonce: {nonce})", nonce=nonce)
+            await channel.send(f"Test message from bot to confirm access to channel {CHANNEL_ID}", nonce=nonce)
+            await ctx.send(f"Successfully sent test message to configured channel {CHANNEL_ID}", nonce=nonce)
         else:
-            await ctx.send(f"Error: Bot cannot access channel {CHANNEL_ID} (nonce: {nonce})")
+            await ctx.send(f"Error: Bot cannot access channel {CHANNEL_ID}", nonce=nonce)
         logger.info(f"Test command completed successfully with nonce {nonce}")
     except Exception as e:
         logger.error(f"Test command failed with nonce {nonce}: {e}")
-        await ctx.send(f"Test failed (nonce: {nonce}): {e}")
+        await ctx.send(f"Test failed: {e}", nonce=nonce)
 
 @bot.command()
 async def status(ctx):
