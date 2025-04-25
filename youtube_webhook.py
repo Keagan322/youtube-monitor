@@ -12,6 +12,7 @@ import time
 import secrets
 import string
 from collections import defaultdict
+import psutil
 
 # Configure logging with detailed output
 logging.basicConfig(
@@ -80,6 +81,9 @@ async def on_ready():
     else:
         logger.error(f"Discord channel {CHANNEL_ID} not found or bot lacks access")
     logger.info(f"FastAPI server ready to receive webhooks at {WEBHOOK_URL}")
+    cpu_percent = psutil.cpu_percent()
+    memory = psutil.virtual_memory()
+    logger.info(f"Server status: CPU={cpu_percent}%, Memory={memory.percent}% used")
 
 def subscribe_channel(channel_id, retries=3, delay=5):
     logger.info(f"Attempting to subscribe to YouTube channel {channel_id}")
@@ -94,7 +98,7 @@ def subscribe_channel(channel_id, retries=3, delay=5):
                     "hub.callback": WEBHOOK_URL,
                     "hub.verify": "async"
                 },
-                timeout=10
+                timeout=15
             )
             logger.debug(f"Subscription response: status={response.status_code}, text={response.text}, headers={response.headers}")
             if response.status_code == 202:
@@ -115,15 +119,39 @@ def subscribe_channel(channel_id, retries=3, delay=5):
     return False
 
 @bot.command()
+async def ping(ctx):
+    """Check bot and server status"""
+    nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+    logger.info(f"Ping command received with nonce {nonce}")
+    if nonce in sent_messages[str(ctx.channel.id)]:
+        logger.debug(f"Skipping duplicate ping message with nonce {nonce}")
+        return
+    sent_messages[str(ctx.channel.id)].add(nonce)
+    try:
+        cpu_percent = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        latency = bot.latency * 1000  # Convert to ms
+        await ctx.send(
+            f"Pong! Bot is online.\n"
+            f"Server: CPU={cpu_percent}%, Memory={memory.percent}% used\n"
+            f"Latency: {latency:.2f}ms",
+            nonce=nonce
+        )
+        logger.info(f"Ping command completed successfully with nonce {nonce}")
+    except Exception as e:
+        logger.error(f"Ping command failed with nonce {nonce}: {e}")
+        await ctx.send(f"Ping failed: {e}", nonce=nonce)
+
+@bot.command()
 async def test(ctx):
     """Test command to verify bot connectivity and permissions"""
     nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
     logger.info(f"Test command received in channel {ctx.channel.id} with nonce {nonce}")
+    if nonce in sent_messages[str(ctx.channel.id)]:
+        logger.debug(f"Skipping duplicate test message with nonce {nonce}")
+        return
+    sent_messages[str(ctx.channel.id)].add(nonce)
     try:
-        if nonce in sent_messages[str(ctx.channel.id)]:
-            logger.debug(f"Skipping duplicate test message with nonce {nonce}")
-            return
-        sent_messages[str(ctx.channel.id)].add(nonce)
         await ctx.send("Bot is online and working! Checking channel access...", nonce=nonce)
         channel = bot.get_channel(CHANNEL_ID)
         if channel:
@@ -177,28 +205,39 @@ async def testwebhook(ctx):
         logger.debug(f"Skipping duplicate testwebhook message with nonce {nonce}")
         return
     sent_messages[str(ctx.channel.id)].add(nonce)
-    try:
-        xml_payload = '''<?xml version="1.0"?>
+    retries = 3
+    delay = 5
+    for attempt in range(retries):
+        try:
+            xml_payload = '''<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015">
     <entry>
         <yt:videoId>test123</yt:videoId>
         <title>Test Video</title>
     </entry>
 </feed>'''
-        response = requests.post(
-            WEBHOOK_URL,
-            data=xml_payload,
-            headers={"Content-Type": "application/xml"},
-            timeout=10
-        )
-        logger.debug(f"Test webhook response: status={response.status_code}, text={response.text}")
-        if response.status_code == 200:
-            await ctx.send("Test webhook sent successfully. Check Discord channel for notification.", nonce=nonce)
-        else:
-            await ctx.send(f"Test webhook failed: status={response.status_code}, response={response.text}", nonce=nonce)
-    except Exception as e:
-        logger.error(f"Testwebhook failed with nonce {nonce}: {e}")
-        await ctx.send(f"Testwebhook failed: {e}", nonce=nonce)
+            logger.debug(f"Attempting test webhook POST, attempt {attempt + 1}")
+            response = requests.post(
+                WEBHOOK_URL,
+                data=xml_payload,
+                headers={"Content-Type": "application/xml"},
+                timeout=15
+            )
+            logger.debug(f"Test webhook response: status={response.status_code}, text={response.text}")
+            if response.status_code == 200:
+                await ctx.send("Test webhook sent successfully. Check Discord channel for notification.", nonce=nonce)
+                return
+            else:
+                await ctx.send(f"Test webhook failed: status={response.status_code}, response={response.text}", nonce=nonce)
+                if attempt < retries - 1:
+                    logger.info(f"Retrying test webhook in {delay} seconds...")
+                    time.sleep(delay)
+        except requests.RequestException as e:
+            logger.error(f"Testwebhook failed with nonce {nonce}: {e}")
+            if attempt < retries - 1:
+                logger.info(f"Retrying test webhook in {delay} seconds...")
+                time.sleep(delay)
+    await ctx.send(f"Testwebhook failed after {retries} attempts: {e}", nonce=nonce)
 
 @bot.command()
 async def monitor(ctx, action: str, platform: str, channel_id: str):
@@ -239,7 +278,7 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
                     "hub.topic": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
                     "hub.callback": WEBHOOK_URL
                 },
-                timeout=10
+                timeout=15
             )
             logger.debug(f"Unsubscribe response: status={response.status_code}, text={response.text}")
             if response.status_code == 202:
