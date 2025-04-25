@@ -11,7 +11,7 @@ from functools import partial
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)  # Set to DEBUG for verbose output
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -73,7 +73,7 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
                     logger.error(f"Subscription failed for {channel_id}: {response.text}")
             except Exception as e:
                 await ctx.send(f"Error subscribing to {channel_id}: {e}")
-                logger.error(f"Subscription error for {channel_id}: {e}")
+                logger.error(f"Subscription error for {channel_id}: {e}", exc_info=True)
         else:
             await ctx.send(f"Channel {channel_id} already monitored")
     elif action.lower() == "remove":
@@ -95,20 +95,21 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
                 logger.info(f"Unsubscribed from {channel_id}")
             except Exception as e:
                 await ctx.send(f"Error unsubscribing from {channel_id}: {e}")
-                logger.error(f"Unsubscribe error for {channel_id}: {e}")
+                logger.error(f"Unsubscribe error for {channel_id}: {e}", exc_info=True)
         else:
-            await ctx.send(f"Channel {channel_id} not found")
+            await ctx.send(f"Channel UCYKgSKZFLTyVVb96hpNnVqQ not found")
+            logger.debug(f"Channel {channel_id} not found in YOUTUBE_CHANNELS")
 
 @app.get("/webhook")
-async def webhook_verify(hub_challenge: str = Query(..., alias="hub.challenge")):
-    logger.debug(f"Received GET webhook verification with challenge: {hub_challenge}")
+async def webhook_verify(request: Request, hub_challenge: str = Query(..., alias="hub.challenge")):
+    logger.debug(f"GET webhook request: headers={request.headers}, query_params={request.query_params}")
     return hub_challenge
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
-    logger.debug("Received webhook POST request")
+    logger.debug(f"POST webhook request: headers={request.headers}")
     xml_data = await request.body()
-    logger.debug(f"Webhook XML: {xml_data}")
+    logger.debug(f"Webhook XML: {xml_data.decode('utf-8')}")
     try:
         root = ET.fromstring(xml_data)
         video_id = root.find(".//{http://www.youtube.com/xml/schemas/2015}videoId").text
