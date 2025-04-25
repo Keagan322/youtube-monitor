@@ -9,14 +9,15 @@ import requests
 import asyncio
 import logging
 import time
+import uuid
 
 # Configure logging with detailed output
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('app.log'),  # Save logs to a file
-        logging.StreamHandler()  # Also print logs to console
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -92,7 +93,7 @@ def subscribe_channel(channel_id, retries=3, delay=5):
             logger.debug(f"Subscription response: status={response.status_code}, text={response.text}, headers={response.headers}")
             if response.status_code == 202:
                 logger.info(f"Subscription request accepted for {channel_id}")
-                time.sleep(2)  # Wait for verification
+                time.sleep(2)
                 return True
             else:
                 logger.error(f"Subscription failed for {channel_id}: status={response.status_code}, response={response.text}")
@@ -110,19 +111,37 @@ def subscribe_channel(channel_id, retries=3, delay=5):
 @bot.command()
 async def test(ctx):
     """Test command to verify bot connectivity and permissions"""
+    nonce = str(uuid.uuid4())
+    logger.info(f"Test command received in channel {ctx.channel.id} with nonce {nonce}")
     try:
-        logger.info(f"Test command received in channel {ctx.channel.id}")
-        await ctx.send("Bot is online and working! Checking channel access...")
+        await ctx.send(f"Bot is online during test {nonce}! Checking channel access...", nonce=nonce)
         channel = bot.get_channel(CHANNEL_ID)
         if channel:
-            await channel.send(f"Test message from bot to confirm access to channel {CHANNEL_ID}")
-            await ctx.send(f"Successfully sent test message to configured channel {CHANNEL_ID}")
+            await channel.send(f"Test message from bot to confirm access to channel {CHANNEL_ID} (nonce: {nonce})", nonce=nonce)
+            await ctx.send(f"Successfully sent test message to configured channel {CHANNEL_ID} (nonce: {nonce})", nonce=nonce)
         else:
-            await ctx.send(f"Error: Bot cannot access channel {CHANNEL_ID}")
-        logger.info("Test command completed successfully")
+            await ctx.send(f"Error: Bot cannot access channel {CHANNEL_ID} (nonce: {nonce})")
+        logger.info(f"Test command completed successfully with nonce {nonce}")
     except Exception as e:
-        logger.error(f"Test command failed: {e}")
-        await ctx.send(f"Test failed: {e}")
+        logger.error(f"Test command failed with nonce {nonce}: {e}")
+        await ctx.send(f"Test failed (nonce: {nonce}): {e}")
+
+@bot.command()
+async def status(ctx):
+    """Check monitored channels and reattempt subscriptions"""
+    logger.info("Status command received")
+    if not YOUTUBE_CHANNELS:
+        await ctx.send("No YouTube channels are currently monitored.")
+        return
+    message = "Monitored YouTube channels:\n"
+    for channel_id in YOUTUBE_CHANNELS:
+        message += f"- {channel_id}\n"
+        logger.info(f"Reattempting subscription for {channel_id}")
+        if subscribe_channel(channel_id):
+            message += f"  Subscription verified for {channel_id}\n"
+        else:
+            message += f"  Failed to verify subscription for {channel_id}\n"
+    await ctx.send(message)
 
 @bot.command()
 async def monitor(ctx, action: str, platform: str, channel_id: str):
@@ -187,8 +206,13 @@ async def handle_webhook(request: Request):
         xml_str = xml_data.decode('utf-8')
         logger.debug(f"Webhook XML payload: {xml_str}")
         root = ET.fromstring(xml_str)
-        video_id = root.find(".//{http://www.youtube.com/xml/schemas/2015}videoId").text
-        title = root.find(".//title").text
+        video_id = root.find(".//{http://www.youtube.com/xml/schemas/2015}videoId")
+        title = root.find(".//title")
+        if video_id is None or title is None:
+            logger.error("Missing videoId or title in webhook XML")
+            return {"status": "error", "message": "Invalid webhook data"}
+        video_id = video_id.text
+        title = title.text
         logger.info(f"Parsed new video: title={title}, video_id={video_id}")
         channel = bot.get_channel(CHANNEL_ID)
         if channel:
