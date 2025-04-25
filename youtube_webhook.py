@@ -9,6 +9,7 @@ import requests
 import asyncio
 from functools import partial
 import logging
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -44,6 +45,34 @@ YOUTUBE_CHANNELS = load_accounts()
 async def on_ready():
     logger.info(f"Webhook bot logged in as {bot.user}")
 
+def subscribe_channel(channel_id, retries=3, delay=5):
+    for attempt in range(retries):
+        try:
+            logger.info(f"Subscribing to YouTube channel {channel_id}, attempt {attempt + 1}")
+            response = requests.post(
+                "https://pubsubhubbub.appspot.com/subscribe",
+                data={
+                    "hub.mode": "subscribe",
+                    "hub.topic": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
+                    "hub.callback": os.getenv("WEBHOOK_URL")
+                }
+            )
+            logger.debug(f"Subscription response: status={response.status_code}, text={response.text}")
+            if response.status_code == 202:
+                logger.info(f"Successfully subscribed to {channel_id}")
+                return True
+            else:
+                logger.error(f"Subscription failed for {channel_id}: {response.text}")
+                if attempt < retries - 1:
+                    logger.info(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
+        except Exception as e:
+            logger.error(f"Subscription error for {channel_id}: {e}", exc_info=True)
+            if attempt < retries - 1:
+                logger.info(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+    return False
+
 @bot.command()
 async def monitor(ctx, action: str, platform: str, channel_id: str):
     logger.debug(f"Received command: action={action}, platform={platform}, channel_id={channel_id}")
@@ -54,26 +83,10 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
         if channel_id not in YOUTUBE_CHANNELS:
             YOUTUBE_CHANNELS.append(channel_id)
             save_accounts(YOUTUBE_CHANNELS)
-            try:
-                logger.info(f"Subscribing to YouTube channel {channel_id}")
-                response = requests.post(
-                    "https://pubsubhubbub.appspot.com/subscribe",
-                    data={
-                        "hub.mode": "subscribe",
-                        "hub.topic": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
-                        "hub.callback": os.getenv("WEBHOOK_URL")
-                    }
-                )
-                logger.debug(f"Subscription response: status={response.status_code}, text={response.text}")
-                if response.status_code == 202:
-                    await ctx.send(f"Added YouTube channel {channel_id}")
-                    logger.info(f"Successfully subscribed to {channel_id}")
-                else:
-                    await ctx.send(f"Error subscribing to {channel_id}: {response.text}")
-                    logger.error(f"Subscription failed for {channel_id}: {response.text}")
-            except Exception as e:
-                await ctx.send(f"Error subscribing to {channel_id}: {e}")
-                logger.error(f"Subscription error for {channel_id}: {e}", exc_info=True)
+            if subscribe_channel(channel_id):
+                await ctx.send(f"Added YouTube channel {channel_id}")
+            else:
+                await ctx.send(f"Failed to subscribe to {channel_id} after retries")
         else:
             await ctx.send(f"Channel {channel_id} already monitored")
     elif action.lower() == "remove":
@@ -97,7 +110,7 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
                 await ctx.send(f"Error unsubscribing from {channel_id}: {e}")
                 logger.error(f"Unsubscribe error for {channel_id}: {e}", exc_info=True)
         else:
-            await ctx.send(f"Channel UCYKgSKZFLTyVVb96hpNnVqQ not found")
+            await ctx.send(f"Channel {channel_id} not found")
             logger.debug(f"Channel {channel_id} not found in YOUTUBE_CHANNELS")
 
 @app.get("/webhook")
