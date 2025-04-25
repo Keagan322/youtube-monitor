@@ -132,12 +132,14 @@ async def handle_webhook(request: Request):
         channel = bot.get_channel(CHANNEL_ID)
         if channel:
             try:
-                await channel.send(f"New YouTube video: {title}\nhttps://www.youtube.com/watch?v={video_id}")
-                logger.info(f"Sent notification for video {video_id} to channel {CHANNEL_ID}")
+               message = f"New YouTube video: {title}\nhttps://www.youtube.com/watch?v={video_id}"
+               logger.debug(f"Attempting to send message to channel {CHANNEL_ID}: {message}")
+               await channel.send(message)
+               logger.info(f"Sent notification for video {video_id} to channel {CHANNEL_ID}")
             except Exception as e:
                 logger.error(f"Failed to send Discord notification to channel {CHANNEL_ID}: {e}", exc_info=True)
         else:
-            logger.error(f"Discord channel {CHANNEL_ID} not found")
+            logger.error(f"Discord channel {CHANNEL_ID} not found or inaccessible")
     except Exception as e:
         logger.error(f"Webhook error: {e}", exc_info=True)
         logger.debug(f"Failed XML payload: {xml_data.decode('utf-8')}")
