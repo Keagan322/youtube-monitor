@@ -1,1 +1,1 @@
-{"youtube": []}
+echo '{"youtube": []}' > accounts.json
