@@ -19,6 +19,7 @@ app = FastAPI()
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 # Enable necessary intents
 intents = discord.Intents.default()
@@ -54,10 +55,10 @@ def subscribe_channel(channel_id, retries=3, delay=5):
                 data={
                     "hub.mode": "subscribe",
                     "hub.topic": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
-                    "hub.callback": os.getenv("WEBHOOK_URL")
+                    "hub.callback": WEBHOOK_URL
                 }
             )
-            logger.debug(f"Subscription response: status={response.status_code}, text={response.text}")
+            logger.debug(f"Subscription response: status={response.status_code}, text={response.text}, headers={response.headers}")
             if response.status_code == 202:
                 logger.info(f"Successfully subscribed to {channel_id}")
                 return True
@@ -100,10 +101,10 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
                     data={
                         "hub.mode": "unsubscribe",
                         "hub.topic": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
-                        "hub.callback": os.getenv("WEBHOOK_URL")
+                        "hub.callback": WEBHOOK_URL
                     }
                 )
-                logger.debug(f"Unsubscribe response: status={response.status_code}, text={response.text}")
+                logger.debug(f"Unsubscribe response: status={response.status_code}, text={response.text}, headers={response.headers}")
                 await ctx.send(f"Removed YouTube channel {channel_id}")
                 logger.info(f"Unsubscribed from {channel_id}")
             except Exception as e:
@@ -136,12 +137,14 @@ async def handle_webhook(request: Request):
             logger.error(f"Channel {CHANNEL_ID} not found")
     except Exception as e:
         logger.error(f"Webhook error: {e}", exc_info=True)
+        # Log raw XML for debugging
+        logger.debug(f"Failed XML payload: {xml_data.decode('utf-8')}")
     return {"status": "ok"}
 
 # Start Discord bot in background
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Starting Discord bot")
+    logger.info(f"Starting Discord bot")
     asyncio.create_task(bot.start(DISCORD_TOKEN))
 
 @app.on_event("shutdown")
