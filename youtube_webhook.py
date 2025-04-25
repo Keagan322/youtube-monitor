@@ -11,7 +11,7 @@ from functools import partial
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)  # Set to DEBUG for verbose output
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -46,6 +46,7 @@ async def on_ready():
 
 @bot.command()
 async def monitor(ctx, action: str, platform: str, channel_id: str):
+    logger.debug(f"Received command: action={action}, platform={platform}, channel_id={channel_id}")
     if platform.lower() != "youtube":
         await ctx.send("Only YouTube supported for now!")
         return
@@ -63,6 +64,7 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
                         "hub.callback": os.getenv("WEBHOOK_URL")
                     }
                 )
+                logger.debug(f"Subscription response: status={response.status_code}, text={response.text}")
                 if response.status_code == 202:
                     await ctx.send(f"Added YouTube channel {channel_id}")
                     logger.info(f"Successfully subscribed to {channel_id}")
@@ -80,7 +82,7 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
             save_accounts(YOUTUBE_CHANNELS)
             try:
                 logger.info(f"Unsubscribing from YouTube channel {channel_id}")
-                requests.post(
+                response = requests.post(
                     "https://pubsubhubbub.appspot.com/subscribe",
                     data={
                         "hub.mode": "unsubscribe",
@@ -88,6 +90,7 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
                         "hub.callback": os.getenv("WEBHOOK_URL")
                     }
                 )
+                logger.debug(f"Unsubscribe response: status={response.status_code}, text={response.text}")
                 await ctx.send(f"Removed YouTube channel {channel_id}")
                 logger.info(f"Unsubscribed from {channel_id}")
             except Exception as e:
@@ -98,12 +101,12 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
 
 @app.get("/webhook")
 async def webhook_verify(hub_challenge: str = Query(..., alias="hub.challenge")):
-    logger.info(f"Received webhook verification with challenge: {hub_challenge}")
+    logger.debug(f"Received GET webhook verification with challenge: {hub_challenge}")
     return hub_challenge
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
-    logger.info("Received webhook POST request")
+    logger.debug("Received webhook POST request")
     xml_data = await request.body()
     logger.debug(f"Webhook XML: {xml_data}")
     try:
@@ -118,7 +121,7 @@ async def handle_webhook(request: Request):
         else:
             logger.error(f"Channel {CHANNEL_ID} not found")
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        logger.error(f"Webhook error: {e}", exc_info=True)
     return {"status": "ok"}
 
 # Start Discord bot in background
