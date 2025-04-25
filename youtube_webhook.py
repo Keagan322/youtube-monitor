@@ -55,14 +55,14 @@ def subscribe_channel(channel_id, retries=5, delay=10):
                 data={
                     "hub.mode": "subscribe",
                     "hub.topic": f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
-                    "hub.callback": WEBHOOK_URL
+                    "hub.callback": WEBHOOK_URL,
+                    "hub.verify": "async"
                 }
             )
             logger.debug(f"Subscription response: status={response.status_code}, text={response.text}, headers={response.headers}")
             if response.status_code == 202:
                 logger.info(f"Successfully subscribed to {channel_id}")
-                # Force verification wait
-                time.sleep(2)
+                time.sleep(2)  # Wait for verification
                 return True
             else:
                 logger.error(f"Subscription failed for {channel_id}: {response.text}")
