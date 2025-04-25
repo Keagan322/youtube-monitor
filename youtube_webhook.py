@@ -46,7 +46,7 @@ YOUTUBE_CHANNELS = load_accounts()
 async def on_ready():
     logger.info(f"Webhook bot logged in as {bot.user}")
 
-def subscribe_channel(channel_id, retries=5, delay=5):
+def subscribe_channel(channel_id, retries=5, delay=10):
     for attempt in range(retries):
         try:
             logger.info(f"Subscribing to YouTube channel {channel_id}, attempt {attempt + 1}")
@@ -61,6 +61,8 @@ def subscribe_channel(channel_id, retries=5, delay=5):
             logger.debug(f"Subscription response: status={response.status_code}, text={response.text}, headers={response.headers}")
             if response.status_code == 202:
                 logger.info(f"Successfully subscribed to {channel_id}")
+                # Force verification wait
+                time.sleep(2)
                 return True
             else:
                 logger.error(f"Subscription failed for {channel_id}: {response.text}")
@@ -132,10 +134,10 @@ async def handle_webhook(request: Request):
         channel = bot.get_channel(CHANNEL_ID)
         if channel:
             try:
-               message = f"New YouTube video: {title}\nhttps://www.youtube.com/watch?v={video_id}"
-               logger.debug(f"Attempting to send message to channel {CHANNEL_ID}: {message}")
-               await channel.send(message)
-               logger.info(f"Sent notification for video {video_id} to channel {CHANNEL_ID}")
+                message = f"New YouTube video: {title}\nhttps://www.youtube.com/watch?v={video_id}"
+                logger.debug(f"Attempting to send message to channel {CHANNEL_ID}: {message}")
+                await channel.send(message)
+                logger.info(f"Sent notification for video {video_id} to channel {CHANNEL_ID}")
             except Exception as e:
                 logger.error(f"Failed to send Discord notification to channel {CHANNEL_ID}: {e}", exc_info=True)
         else:
