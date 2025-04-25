@@ -46,7 +46,7 @@ YOUTUBE_CHANNELS = load_accounts()
 async def on_ready():
     logger.info(f"Webhook bot logged in as {bot.user}")
 
-def subscribe_channel(channel_id, retries=3, delay=5):
+def subscribe_channel(channel_id, retries=5, delay=5):
     for attempt in range(retries):
         try:
             logger.info(f"Subscribing to YouTube channel {channel_id}, attempt {attempt + 1}")
@@ -133,11 +133,11 @@ async def handle_webhook(request: Request):
         if channel:
             try:
                 await channel.send(f"New YouTube video: {title}\nhttps://www.youtube.com/watch?v={video_id}")
-                logger.info(f"Sent notification for video {video_id}")
+                logger.info(f"Sent notification for video {video_id} to channel {CHANNEL_ID}")
             except Exception as e:
-                logger.error(f"Failed to send Discord notification: {e}", exc_info=True)
+                logger.error(f"Failed to send Discord notification to channel {CHANNEL_ID}: {e}", exc_info=True)
         else:
-            logger.error(f"Channel {CHANNEL_ID} not found")
+            logger.error(f"Discord channel {CHANNEL_ID} not found")
     except Exception as e:
         logger.error(f"Webhook error: {e}", exc_info=True)
         logger.debug(f"Failed XML payload: {xml_data.decode('utf-8')}")
