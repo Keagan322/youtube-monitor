@@ -11,6 +11,7 @@ import logging
 import time
 import secrets
 import string
+from collections import defaultdict
 
 # Configure logging with detailed output
 logging.basicConfig(
@@ -42,6 +43,9 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Message deduplication cache
+sent_messages = defaultdict(set)
 
 def load_accounts():
     try:
@@ -94,7 +98,7 @@ def subscribe_channel(channel_id, retries=3, delay=5):
             )
             logger.debug(f"Subscription response: status={response.status_code}, text={response.text}, headers={response.headers}")
             if response.status_code == 202:
-                logger.info(f"Subscription request accepted for {channel_id}")
+                logger.info(f"Subscription request accepted for {channel_id}, lease_seconds={response.headers.get('hub-lease-seconds', 'unknown')}")
                 time.sleep(2)
                 return True
             else:
@@ -116,11 +120,25 @@ async def test(ctx):
     nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
     logger.info(f"Test command received in channel {ctx.channel.id} with nonce {nonce}")
     try:
+        if nonce in sent_messages[str(ctx.channel.id)]:
+            logger.debug(f"Skipping duplicate test message with nonce {nonce}")
+            return
+        sent_messages[str(ctx.channel.id)].add(nonce)
         await ctx.send("Bot is online and working! Checking channel access...", nonce=nonce)
         channel = bot.get_channel(CHANNEL_ID)
         if channel:
-            await channel.send(f"Test message from bot to confirm access to channel {CHANNEL_ID}", nonce=nonce)
-            await ctx.send(f"Successfully sent test message to configured channel {CHANNEL_ID}", nonce=nonce)
+            channel_nonce = nonce + "-channel"
+            if channel_nonce in sent_messages[str(channel.id)]:
+                logger.debug(f"Skipping duplicate channel test message with nonce {channel_nonce}")
+                return
+            sent_messages[str(channel.id)].add(channel_nonce)
+            await channel.send(f"Test message from bot to confirm access to channel {CHANNEL_ID}", nonce=channel_nonce)
+            success_nonce = nonce + "-success"
+            if success_nonce in sent_messages[str(ctx.channel.id)]:
+                logger.debug(f"Skipping duplicate success test message with nonce {success_nonce}")
+                return
+            sent_messages[str(ctx.channel.id)].add(success_nonce)
+            await ctx.send(f"Successfully sent test message to configured channel {CHANNEL_ID}", nonce=success_nonce)
         else:
             await ctx.send(f"Error: Bot cannot access channel {CHANNEL_ID}", nonce=nonce)
         logger.info(f"Test command completed successfully with nonce {nonce}")
@@ -131,9 +149,14 @@ async def test(ctx):
 @bot.command()
 async def status(ctx):
     """Check monitored channels and reattempt subscriptions"""
-    logger.info("Status command received")
+    nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+    logger.info(f"Status command received with nonce {nonce}")
+    if nonce in sent_messages[str(ctx.channel.id)]:
+        logger.debug(f"Skipping duplicate status message with nonce {nonce}")
+        return
+    sent_messages[str(ctx.channel.id)].add(nonce)
     if not YOUTUBE_CHANNELS:
-        await ctx.send("No YouTube channels are currently monitored.")
+        await ctx.send("No YouTube channels are currently monitored.", nonce=nonce)
         return
     message = "Monitored YouTube channels:\n"
     for channel_id in YOUTUBE_CHANNELS:
@@ -143,29 +166,66 @@ async def status(ctx):
             message += f"  Subscription verified for {channel_id}\n"
         else:
             message += f"  Failed to verify subscription for {channel_id}\n"
-    await ctx.send(message)
+    await ctx.send(message, nonce=nonce)
+
+@bot.command()
+async def testwebhook(ctx):
+    """Simulate a YouTube webhook POST"""
+    nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+    logger.info(f"Testwebhook command received with nonce {nonce}")
+    if nonce in sent_messages[str(ctx.channel.id)]:
+        logger.debug(f"Skipping duplicate testwebhook message with nonce {nonce}")
+        return
+    sent_messages[str(ctx.channel.id)].add(nonce)
+    try:
+        xml_payload = '''<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+    <entry>
+        <yt:videoId>test123</yt:videoId>
+        <title>Test Video</title>
+    </entry>
+</feed>'''
+        response = requests.post(
+            WEBHOOK_URL,
+            data=xml_payload,
+            headers={"Content-Type": "application/xml"},
+            timeout=10
+        )
+        logger.debug(f"Test webhook response: status={response.status_code}, text={response.text}")
+        if response.status_code == 200:
+            await ctx.send("Test webhook sent successfully. Check Discord channel for notification.", nonce=nonce)
+        else:
+            await ctx.send(f"Test webhook failed: status={response.status_code}, response={response.text}", nonce=nonce)
+    except Exception as e:
+        logger.error(f"Testwebhook failed with nonce {nonce}: {e}")
+        await ctx.send(f"Testwebhook failed: {e}", nonce=nonce)
 
 @bot.command()
 async def monitor(ctx, action: str, platform: str, channel_id: str):
-    logger.info(f"Monitor command: action={action}, platform={platform}, channel_id={channel_id}")
+    nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+    logger.info(f"Monitor command: action={action}, platform={platform}, channel_id={channel_id}, nonce={nonce}")
+    if nonce in sent_messages[str(ctx.channel.id)]:
+        logger.debug(f"Skipping duplicate monitor message with nonce {nonce}")
+        return
+    sent_messages[str(ctx.channel.id)].add(nonce)
     if platform.lower() != "youtube":
-        await ctx.send("Only YouTube is supported!")
+        await ctx.send("Only YouTube is supported!", nonce=nonce)
         logger.warning(f"Unsupported platform {platform}")
         return
     if action.lower() == "add":
         if channel_id in YOUTUBE_CHANNELS:
-            await ctx.send(f"Channel {channel_id} is already monitored")
+            await ctx.send(f"Channel {channel_id} is already monitored", nonce=nonce)
             logger.info(f"Channel {channel_id} already in YOUTUBE_CHANNELS")
             return
         YOUTUBE_CHANNELS.append(channel_id)
         save_accounts(YOUTUBE_CHANNELS)
         if subscribe_channel(channel_id):
-            await ctx.send(f"Successfully added YouTube channel {channel_id}")
+            await ctx.send(f"Successfully added YouTube channel {channel_id}", nonce=nonce)
         else:
-            await ctx.send(f"Failed to subscribe to {channel_id} after retries. Check logs.")
+            await ctx.send(f"Failed to subscribe to {channel_id} after retries. Check logs.", nonce=nonce)
     elif action.lower() == "remove":
         if channel_id not in YOUTUBE_CHANNELS:
-            await ctx.send(f"Channel {channel_id} is not monitored")
+            await ctx.send(f"Channel {channel_id} is not monitored", nonce=nonce)
             logger.info(f"Channel {channel_id} not in YOUTUBE_CHANNELS")
             return
         YOUTUBE_CHANNELS.remove(channel_id)
@@ -183,15 +243,15 @@ async def monitor(ctx, action: str, platform: str, channel_id: str):
             )
             logger.debug(f"Unsubscribe response: status={response.status_code}, text={response.text}")
             if response.status_code == 202:
-                await ctx.send(f"Successfully removed YouTube channel {channel_id}")
+                await ctx.send(f"Successfully removed YouTube channel {channel_id}", nonce=nonce)
             else:
-                await ctx.send(f"Unsubscribe request failed for {channel_id}. Check logs.")
+                await ctx.send(f"Unsubscribe request failed for {channel_id}. Check logs.", nonce=nonce)
             logger.info(f"Unsubscribe request sent for {channel_id}")
         except Exception as e:
-            await ctx.send(f"Error unsubscribing from {channel_id}: {e}")
+            await ctx.send(f"Error unsubscribing from {channel_id}: {e}", nonce=nonce)
             logger.error(f"Unsubscribe error for {channel_id}: {e}")
     else:
-        await ctx.send("Invalid action. Use 'add' or 'remove'.")
+        await ctx.send("Invalid action. Use 'add' or 'remove'.", nonce=nonce)
         logger.warning(f"Invalid action {action}")
 
 @app.get("/webhook")
@@ -220,7 +280,12 @@ async def handle_webhook(request: Request):
         if channel:
             message = f"New YouTube video: {title}\nhttps://www.youtube.com/watch?v={video_id}"
             logger.info(f"Sending notification to channel {CHANNEL_ID}: {message}")
-            await channel.send(message)
+            nonce = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+            if nonce in sent_messages[str(channel.id)]:
+                logger.debug(f"Skipping duplicate notification with nonce {nonce}")
+                return {"status": "ok"}
+            sent_messages[str(channel.id)].add(nonce)
+            await channel.send(message, nonce=nonce)
             logger.info(f"Successfully sent notification for video {video_id} to channel {CHANNEL_ID}")
         else:
             logger.error(f"Cannot send notification: Discord channel {CHANNEL_ID} not found")
