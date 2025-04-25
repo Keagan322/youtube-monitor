@@ -45,6 +45,11 @@ YOUTUBE_CHANNELS = load_accounts()
 @bot.event
 async def on_ready():
     logger.info(f"Webhook bot logged in as {bot.user}")
+    channel = bot.get_channel(CHANNEL_ID)
+    if channel:
+        logger.info(f"Discord channel {CHANNEL_ID} found")
+    else:
+        logger.error(f"Discord channel {CHANNEL_ID} not found during startup")
 
 def subscribe_channel(channel_id, retries=5, delay=10):
     for attempt in range(retries):
